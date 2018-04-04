@@ -8,6 +8,7 @@
   [& args]
   (println "Hello, World!"))
 
+
 (defprotocol Nion
   (init [this])
   (c [this])
@@ -76,7 +77,7 @@
     (= (:order a)
        (:order b))))
 
-
+;slower by 10x than using pure commons Complex because of the redundant copies of data
 (defrecord Complex2Apache [a b]
   Nion
   (init [this]
@@ -144,6 +145,7 @@
   (rot [this other]
     (nion-ops-rot this other)))
 
+; 2x slower than apache commons complex
 (defrecord Complex2 [a b]
   Nion
   (init [this]
