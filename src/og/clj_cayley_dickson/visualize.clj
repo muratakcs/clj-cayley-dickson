@@ -1,6 +1,7 @@
 (ns og.clj-cayley-dickson.visualize
   (:require [og.clj-cayley-dickson.graphics.fractal :as f]
-            [clojure.java.shell :refer [sh]]))
+            [clojure.java.shell :refer [sh]]
+            [me.raynes.fs :as fs]))
 
 (defn animate-results [glob output]
   (println "Creating animated gif from files, to file: " glob " -> " output)
@@ -10,7 +11,7 @@
       (println "Could not create animated gif:" t))))
 
 (defn draw-images-to-files
-  [{:keys [domain-range impl x0 y0 w0 h0 iters width height outdir]}]
+  [{:keys [domain-range impl-algo impl-draw x0 y0 w0 h0 iters width height outdir]}]
   (let [count* (atom 0)]
     (doseq [{:keys [i-delt j-delt w-delt h-delt]
              :or   {i-delt 0.0 j-delt 0.0 w-delt 0.0 h-delt 0.0}} domain-range]
@@ -24,17 +25,17 @@
             w (+ w0
                  w-delt)
             h (+ h0
-                 h-delt
-                 )]
-        (println "Drawing to: " outdir)
-        (time (f/draw x y w h iters width height [impl :draw-lines] outdir))
+                 h-delt)]
+        (f/draw-w-io x y w h iters width height [impl-algo impl-draw] outdir)
         (swap! count* inc)
         ;(time (draw x y w h 64 (* (inc (+ j i)) 300) (* (inc (+ j i)) 200) [impl :draw-raster]))
         outdir))))
 
-(defn mandelbrot-experiment [exp-name impl fn-domain-range]
-  (let [periods      1.5
-        images-count 48
+(defn mandelbrot-experiment [exp-name impl-algo impl-draw fn-domain-range iters]
+  (if-not (fs/exists? "fractals")
+    (fs/mkdir "fractals"))
+  (let [periods      4
+        images-count 128
         domain-range (fn-domain-range
                        periods
                        images-count)
@@ -42,17 +43,18 @@
         y            -0.6
         w            2.8
         h            2.3
-        outdir       (str "fractals-" exp-name "-" (System/currentTimeMillis))]
+        outdir       (str "fractals/fractals-" (name impl-algo) "-" (name impl-draw) "-" exp-name "-" (System/currentTimeMillis))]
     (draw-images-to-files
       {:domain-range domain-range
-       :impl         impl
+       :impl-algo    impl-algo
+       :impl-draw    impl-draw
        :x0           x
        :y0           y
        :w0           w
        :h0           h
-       :iters        64
-       :width        600
-       :height       400
+       :iters        iters
+       :width        60
+       :height       40
        :outdir       outdir})
 
     (animate-results
@@ -60,13 +62,23 @@
       (str "fractal-gifs/movie-" exp-name "-"
            (System/currentTimeMillis) ".gif"))))
 
-
 ;(println "1. apache time: (reference)")
 ;(time (mandelbrot-01 :apache))
 ;(println "2. og apache time: (10x slower than 1.)")
 ;(time (mandelbrot-01 :og-apache))
-(println "3. og plain time: (2x slower than 1.)")
-(mandelbrot-experiment "periodic-pan" :og-plain-quat f/xy-offsets-periodic)
-(mandelbrot-experiment "xy-pan" :og-plain-quat f/xy-offsets-pan)
+;(println "3. og plain time: (2x slower than 1.) w imagez (0-2 seconds slower than 4.)")
+;(mandelbrot-experiment "periodic-pan-imgz"
+;                       :og-plain-quat
+;                       :draw-imagezlib
+;                       f/xy-offsets-periodic)
+(println "4. og plain time: (2x slower than 1.)")
+(mandelbrot-experiment "periodic-pan-64"
+                       :og-plain-quat
+                       :draw-lines
+                       f/xy-offsets-periodic
+                       64)
+
+
+
 
 

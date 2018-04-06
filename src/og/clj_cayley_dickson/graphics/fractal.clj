@@ -4,7 +4,9 @@
              :refer [complex quaternion]]
             [og.clj-cayley-dickson.graphics.colors
              :refer [argb-int]]
-            [me.raynes.fs :as fs])
+            [me.raynes.fs :as fs]
+            [mikera.image.core :as imgz]
+            [mikera.image.colours :as imgz-color])
   (:import (java.awt Dimension Color)
            (javax.swing JFrame JLabel)
            (java.awt.image BufferedImage WritableRaster)
@@ -16,12 +18,13 @@
 ; https://nakkaya.com/2009/09/29/fractals-in-clojure-mandelbrot-fractal/
 ; https://sites.google.com/site/drjohnbmatthews/raster
 
+(set! *unchecked-math* true)
+;(set! *warn-on-reflection* true)
+
 (defn calc-iterations-og-quat
   "5x slower than apache commons math"
   [a b c d max-iterations impl]
-  (let [
-        q-number (quaternion {:a a :b b :c c :d d :impl impl})
-        ]
+  (let [q-number (quaternion {:a a :b b :c c :d d :impl impl})]
     (loop [z-q        q-number
            iterations 0]
       (if (or
@@ -90,6 +93,17 @@
           b    (min (int (+ 40 (/ (* 5 (* gray gray)) 255))) 255)]
       (Color. r g b))))
 
+(defn calc-pixel-color-argb-long
+  [iterations max-iterations]
+  (if (or (< iterations 10)
+          (= iterations max-iterations))
+    (imgz-color/rgb-from-components 0 0 0)
+    (let [gray (long (/ (* iterations 255) max-iterations))
+          r    gray
+          g    (min (long (/ (* 5 (* gray gray)) 255)) 255)
+          b    (min (long (+ 40 (/ (* 5 (* gray gray)) 255))) 255)]
+      (imgz-color/rgb-from-components r g b))))
+
 (defn calc-pixel-color-argb
   [iterations max-iterations]
   (if (or (< iterations 10)
@@ -119,6 +133,8 @@
         iterations (calc-iterations
                      p q max-iterations (first impl))
         color      (case (second impl)
+                     :draw-imagezlib (calc-pixel-color-argb-long
+                                       iterations max-iterations)
                      :draw-lines (calc-pixel-color
                                    iterations max-iterations)
                      :draw-raster (calc-pixel-color-argb
@@ -152,6 +168,14 @@
       (let [pixel (int-array [a r g b])]
         (.setPixel raster i j pixel)))))
 
+
+
+(defn draw-intensities-w-imagez [intensities image surface-width surface-height]
+  (let [pixels (imgz/get-pixels image)]
+    (doseq [[argb i j] intensities]
+      (aset pixels (+ (* j surface-width) i) argb))
+    (imgz/set-pixels image pixels)))
+
 (defn generate
   "docs"
   [x y width height max-iterations image surface-width surface-height impl]
@@ -160,35 +184,29 @@
                       x y width height max-iterations
                       surface-width surface-height impl)]
     (case (second impl)
+      :draw-imagezlib (draw-intensities-w-imagez intensities image surface-width surface-height)
       :draw-lines (draw-intensities-w-lines intensities graphics)
       :draw-raster (draw-intensities-w-raster intensities image))))
 
-(defn draw
-  [x y width height iterations surface-width surface-height impl outdir]
-  (if-not (fs/exists? outdir)
-    (fs/mkdir outdir))
-  (let [filename (str outdir "/fractal-" (System/currentTimeMillis) ".png")
-        image    (BufferedImage.
-                   surface-width
-                   surface-height
-                   BufferedImage/TYPE_INT_RGB)
-        canvas   (proxy [JLabel] []
-                   (paint [g]
-                     (.drawImage g image 0 0 this)))]
-    (println "Draw to: " filename)
+(defn draw [x y width height iterations surface-width surface-height impl]
+  (let [^BufferedImage image (BufferedImage.
+                               surface-width
+                               surface-height
+                               BufferedImage/TYPE_INT_ARGB)]
     (generate x y width height
               iterations image
               surface-width surface-height impl)
-    (ImageIO/write image "png" (File. filename))
-    (doto (JFrame.)
-      (.add canvas)
-      (.setSize
-        (Dimension.
-          surface-width
-          surface-height))
-      ;TODO so much show!
-      ;(.show)
-      )))
+    image))
+
+(defn draw-w-io
+  [x y width height iterations surface-width surface-height impl outdir]
+  (if-not (fs/exists? outdir)
+    (fs/mkdir outdir))
+  (let [filename             (str outdir "/fractal-" (System/currentTimeMillis) ".png")
+        ^BufferedImage image (time
+                               (draw x y width height iterations surface-width surface-height impl))]
+    (println "Draw to: " filename)
+    (ImageIO/write image "png" (File. filename))))
 
 
 (defn offsets-map [i-deltas j-deltas w-deltas h-deltas]
