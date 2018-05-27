@@ -113,6 +113,11 @@
   (test-generate-seq-and-compose-it))
 
 
-(def iter-results (gg/iterate-pop 100 30))
+(def fractal-objective
+  "The BufferedImage we wish to reproduce"
+  (gg/draw
+    0.655 0.05 0.01 0.05 64 20 20))
+
+(def iter-results (gg/iterate-pop fractal-objective 50 20))
 
 (clojure.pprint/pprint (:total-distances-ts iter-results))

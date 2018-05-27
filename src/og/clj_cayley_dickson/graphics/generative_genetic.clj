@@ -44,13 +44,8 @@
     count
     (repeatedly generate-random-view)))
 
-(def fractal-objective
-  "The BufferedImage we wish to reproduce"
-  (draw
-    0.655 0.05 0.01 0.05 64 20 20))
 
-
-(defn- compare-img-dist-fn-unmemo [w h x y dim-w dim-h]
+(defn- compare-img-dist-fn-unmemo [fractal-objective w h x y dim-w dim-h]
   "Computes distance between objective
   image and generated image"
   (img-util/imgs->distance
@@ -64,22 +59,22 @@
   "Memoized version of above"
   (memoize compare-img-dist-fn-unmemo))
 
-(defn- pop-w-distances [pop]
+(defn- pop-w-distances [pop fractal-objective]
   "compute and conj distances between images"
   (pmap
     (fn [[w h x y]]
-      [(compare-img-dist-fn w h x y 20 20)
+      [(compare-img-dist-fn fractal-objective w h x y 20 20)
        w
        h
        x
        y])
     pop))
 
-(defn- sorted-pop-by-fitness [pop]
+(defn- sorted-pop-by-fitness [pop fractal-objective]
   "Sort population by its calculated fitness"
   (let [w-distances    (sort-by
                          first
-                         (pop-w-distances pop))
+                         (pop-w-distances pop fractal-objective))
         sorted         (map
                          rest
                          w-distances)
@@ -252,7 +247,7 @@
       composed-img)))
 
 
-(defn iterate-pop [init-size iters]
+(defn iterate-pop [fractal-objective init-size iters]
   "Main function to iterate through population using GA"
   (loop [the-iters   iters
          the-pop     (init-pop init-size)
@@ -262,7 +257,7 @@
              (not (fitnesses-converged? total-dists)))
       (let [[total-distance sorted-old-pop]
             (time
-              (sorted-pop-by-fitness the-pop))]
+              (sorted-pop-by-fitness the-pop fractal-objective))]
         (recur
           (dec the-iters)
           (sorted-old-pop->new-pop
