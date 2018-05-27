@@ -183,19 +183,34 @@
                               new-pop)]
     new-pop-mutated))
 
+(defn- rel-err [a b]
+  (/
+    (Math/abs
+      (- a b))
+    a))
 
-(defn- fitnesses-converged? [fitnesses]
-  "Converged based on first-order delta between fitnesses"
-  (let [c? (and
-             (< 2 (count fitnesses))
-             (let [last1    (last fitnesses)
-                   last2    (second (reverse fitnesses))
-                   rel-conv (/
-                              (Math/abs
-                                (- last2 last1))
-                              last1)]
-               (println "Convergence check, rel error: " rel-conv)
-               (> 0.000005 rel-conv)))]
+(defn- distances-converged? [distances]
+  "Converged based on first-order delta (etc) between distances"
+  (let [c? (or
+             (and (< 10 (count distances))
+                  (let [last1      (last distances)
+                        last-third (nth distances
+                                        (* 2
+                                           (int
+                                             (/
+                                               (count distances)
+                                               3.0))))
+                        is-stuck?  (or (< last-third last1)
+                                       (> 0.01 (rel-err last-third last1)))]
+                    (when is-stuck? (println "\n-- Stuck! --\n"))
+                    is-stuck?))
+             (and
+               (< 2 (count distances))
+               (let [last1    (last distances)
+                     last2    (second (reverse distances))
+                     rel-conv (rel-err last1 last2)]
+                 (println "Convergence check, rel error: " rel-conv)
+                 (> 0.000005 rel-conv))))]
     (when c? (println "Converged!"))
     c?))
 
@@ -254,7 +269,7 @@
          total-dists []]
     (println "iter: " (- iters the-iters) (count the-pop))
     (if (and (pos? the-iters)
-             (not (fitnesses-converged? total-dists)))
+             (not (distances-converged? total-dists)))
       (let [[total-distance sorted-old-pop]
             (time
               (sorted-pop-by-fitness the-pop fractal-objective))]
