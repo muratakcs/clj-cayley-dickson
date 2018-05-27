@@ -1,7 +1,14 @@
 (ns og.clj-cayley-dickson.graphics.generative-genetic
   (:require
-    [og.clj-cayley-dickson.graphics.image-util :as img-util]))
+    [og.clj-cayley-dickson.graphics.image-util :as img-util]
+    [og.clj-cayley-dickson.graphics.fractal :as frac]))
 
+
+(defn draw [w h x y iters width height]
+  #_(println "draw: " w h x y iters width height)
+  (frac/draw
+    w h x y iters (max 2 width) (max 2 height)
+    [:og-plain-quat :draw-lines]))
 
 (defn if-not-pos-then-default [v default]
   (if (or (zero? v) (neg? v))
@@ -17,7 +24,7 @@
 (defn generate-random-view []
   "A random-ish [w h x y] 'view'
   by sampling values likely to produce visually
-  appealling results"
+  appealing results"
   [(+
      (rand-nth [0.6 0.62 0.64 0.66])
      (if-not-pos-then-default (random-around-zero-w-radius 0.005) 0.0))
@@ -70,19 +77,19 @@
 
 (defn- sorted-pop-by-fitness [pop]
   "Sort population by its calculated fitness"
-  (let [w-fitness (sort-by
-                    first
-                    (pop-w-distances pop))
-        sorted    (map
-                    rest
-                    w-fitness)
-        total-fit (reduce + (map first w-fitness))]
-    (println "  pop inverse fitness (sum distances) : "
-             total-fit
+  (let [w-distances    (sort-by
+                         first
+                         (pop-w-distances pop))
+        sorted         (map
+                         rest
+                         w-distances)
+        total-distance (reduce + (map first w-distances))]
+    (println "  pop sum distances : "
+             total-distance
              "\n  top 5: "
-             (take 5 (map first w-fitness)))
-    ;(clojure.pprint/pprint w-fitness)
-    [total-fit sorted]))
+             (take 5 (map first w-distances)))
+    ;(clojure.pprint/pprint w-distances)
+    [total-distance sorted]))
 
 (defn- selection-linear [pop total-fitness]
   "TODO wip select new pop linearly weights"
@@ -94,8 +101,7 @@
                                pop-count
                                (/ dist total-fitness)))
                            w h x y])
-                        pop)]
-    ))
+                        pop)]))
 
 (defn- mutate [w h x y]
   "Mutate a view vector by some small (or large)
@@ -199,25 +205,68 @@
     c?))
 
 
+(defn- rand-size [max]
+  (if-not-pos-then-default
+    (* max (rand))
+    (float (/ max 2))))
+(defn generate-img-compose-seq
+  "Generated a seq of:
+   [x-offset,y-offset, w, h, x, y] where
+   the offsets are randomly generated;
+   This is used to generate a composition
+    of images later."
+  [{:keys [candidate-pop canvas-width canvas-height seq-size]}]
+  (let [imgs           (take seq-size (shuffle candidate-pop))
+        imgs-w-offsets (map
+                         (fn [[w h x y]]
+                           [[(* 0.9 (rand-size canvas-width))
+                             (* 0.9 (rand-size canvas-height))]
+                            [w h x y]
+                            [(* 0.2 (rand-size canvas-width))
+                             (* 0.2 (rand-size canvas-height))]])
+                         imgs)]
+    imgs-w-offsets))
+
+
+(defn img-compose-seq->composed-img
+  [{:keys [imgs canvas-width canvas-height]}]
+  "Takes a seq of [off-x, off-y, w, h, x, y] and renders
+  to one image."
+  (loop [imgs-left    imgs
+         composed-img nil]
+    (if (pos? (count imgs-left))
+      (let [[[xoffset yoffset]
+             [w h x y]
+             [img-w img-h]] (first imgs-left)
+            recomposed (img-util/combine
+                         {:xoffset       xoffset
+                          :yoffset       yoffset
+                          :canvas-width  canvas-width
+                          :canvas-height canvas-height
+                          :img1          composed-img
+                          :img2          (draw
+                                           w h x y 64
+                                           img-w img-h)})]
+        (println "w h x y iw ih" w h x y img-w img-h)
+        (recur (rest imgs-left) recomposed))
+      composed-img)))
+
 
 (defn iterate-pop [init-size iters]
   "Main function to iterate through population using GA"
-  (loop [the-iters  iters
-         the-pop    (init-pop init-size)
-         total-fits []]
+  (loop [the-iters   iters
+         the-pop     (init-pop init-size)
+         total-dists []]
     (println "iter: " (- iters the-iters) (count the-pop))
     (if (and (pos? the-iters)
-             (not (fitnesses-converged? total-fits)))
-      (let [[total-fit sorted-old-pop] (time
-                                         (sorted-pop-by-fitness the-pop))]
+             (not (fitnesses-converged? total-dists)))
+      (let [[total-distance sorted-old-pop]
+            (time
+              (sorted-pop-by-fitness the-pop))]
         (recur
           (dec the-iters)
           (sorted-old-pop->new-pop
             sorted-old-pop)
-          (conj total-fits total-fit)))
-      {:total-fit-ts total-fits
-       :final-pop    the-pop})))
-
-;(def iter-results (iterate-pop 6000 50))
-;
-;(clojure.pprint/pprint (:total-fit-ts iter-results))
+          (conj total-dists total-distance)))
+      {:total-distances-ts total-dists
+       :final-pop          the-pop})))
