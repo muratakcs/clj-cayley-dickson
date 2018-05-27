@@ -1,22 +1,14 @@
 (ns og.clj-cayley-dickson.graphics.generative-genetic
   (:require
-    [mikera.image.core :as imgz]
-    [mikera.image.filters :as imgzf]
-    [og.clj-cayley-dickson.graphics.image-util :as img-util]
-    [og.clj-cayley-dickson.graphics.fractal :as frac]))
+    [og.clj-cayley-dickson.graphics.image-util :as img-util]))
 
-(defn- draw [w h x y iters width height]
-  (println "draw: " w h x y iters width height)
-  (frac/draw
-    w h x y iters (max 2 width) (max 2 height)
-    [:og-plain-quat :draw-lines]))
 
-(defn- if-not-pos-then-default [v default]
+(defn if-not-pos-then-default [v default]
   (if (or (zero? v) (neg? v))
     default
     v))
 
-(defn random-around-zero-w-radius [radius]
+(defn- random-around-zero-w-radius [radius]
   "Random float in [-radius/2,radius/2]"
   (* radius
      (- (rand)
@@ -39,7 +31,7 @@
      (rand-nth [0.005 0.01 0.05 0.1])
      (random-around-zero-w-radius 0.002))])
 
-(defn init-pop [count]
+(defn- init-pop [count]
   "Initial population using random sampling"
   (take
     count
@@ -51,7 +43,7 @@
     0.655 0.05 0.01 0.05 64 20 20))
 
 
-(defn compare-img-dist-fn-unmemo [w h x y dim-w dim-h]
+(defn- compare-img-dist-fn-unmemo [w h x y dim-w dim-h]
   "Computes distance between objective
   image and generated image"
   (img-util/imgs->distance
@@ -65,7 +57,7 @@
   "Memoized version of above"
   (memoize compare-img-dist-fn-unmemo))
 
-(defn pop-w-distances [pop]
+(defn- pop-w-distances [pop]
   "compute and conj distances between images"
   (pmap
     (fn [[w h x y]]
@@ -76,7 +68,7 @@
        y])
     pop))
 
-(defn sorted-pop-by-fitness [pop]
+(defn- sorted-pop-by-fitness [pop]
   "Sort population by its calculated fitness"
   (let [w-fitness (sort-by
                     first
@@ -92,7 +84,7 @@
     ;(clojure.pprint/pprint w-fitness)
     [total-fit sorted]))
 
-(defn selection-linear [pop total-fitness]
+(defn- selection-linear [pop total-fitness]
   "TODO wip select new pop linearly weights"
   (let [pop-count     (count pop)
         pop-w-weights (map
@@ -105,7 +97,7 @@
                         pop)]
     ))
 
-(defn mutate [w h x y]
+(defn- mutate [w h x y]
   "Mutate a view vector by some small (or large)
   amount in one component"
   (let [which-one    (rand-nth [0 1 2 3])
@@ -118,7 +110,7 @@
       2 [w h (transform-fn x) y]
       3 [w h x (transform-fn y)])))
 
-(defn hybrid [w1 h1 x1 y1 w2 h2 x2 y2]
+(defn- hybrid [w1 h1 x1 y1 w2 h2 x2 y2]
   "Hybrid of two view components"
   (let [which-one (rand-nth [0 1 2 3 4 5 6 7 8 9])]
     (case which-one
@@ -133,7 +125,7 @@
       8 [w2 h1 x2 y1]
       9 [w1 h1 x2 y1])))
 
-(defn hybrid-many [base-pop repro-pop take-count]
+(defn- hybrid-many [base-pop repro-pop take-count]
   "Convenience to hybridize between populations"
   (->>
     base-pop
@@ -144,7 +136,7 @@
     (take
       take-count)))
 
-(defn sorted-old-pop->new-pop [sorted-pop]
+(defn- sorted-old-pop->new-pop [sorted-pop]
   "Heuristic makeup of new pop from the old"
   (let [how-many            (count sorted-pop)
         one-third           (int (/ how-many 3))
@@ -191,7 +183,7 @@
     new-pop-mutated))
 
 
-(defn fitnesses-converged? [fitnesses]
+(defn- fitnesses-converged? [fitnesses]
   "Converged based on first-order delta between fitnesses"
   (let [c? (and
              (< 2 (count fitnesses))
@@ -205,6 +197,8 @@
                (> 0.000005 rel-conv)))]
     (when c? (println "Converged!"))
     c?))
+
+
 
 (defn iterate-pop [init-size iters]
   "Main function to iterate through population using GA"
@@ -227,70 +221,3 @@
 ;(def iter-results (iterate-pop 6000 50))
 ;
 ;(clojure.pprint/pprint (:total-fit-ts iter-results))
-
-
-(defn rand-size [max]
-  (if-not-pos-then-default
-    (* max (rand))
-    (float (/ max 2)))
-  )
-
-(defn generate-img-compose-seq
-  "Generated a seq of:
-   [x-offset,y-offset, w, h, x, y] where
-   the offsets are randomly generated;
-   This is used to generate a composition
-    of images later."
-  [{:keys [candidate-pop canvas-width canvas-height seq-size]}]
-  (let [imgs           (take seq-size (shuffle candidate-pop))
-        imgs-w-offsets (map
-                         (fn [[w h x y]]
-                           [[(* 0.9 (rand-size canvas-width))
-                             (* 0.9 (rand-size canvas-height))]
-                            [w h x y]
-                            [(* 0.2 (rand-size canvas-width))
-                             (* 0.2 (rand-size canvas-height))]])
-                         imgs)]
-    imgs-w-offsets))
-
-(defn img-compose-seq->composed-img [{:keys [imgs canvas-width canvas-height]}]
-  "Takes a seq of [off-x, off-y, w, h, x, y] and renders
-  to one image."
-  (loop [imgs-left    imgs
-         composed-img nil]
-    (if (pos? (count imgs-left))
-      (let [[[xoffset yoffset]
-             [w h x y]
-             [img-w img-h]] (first imgs-left)
-            recomposed (img-util/combine
-                         {:xoffset       xoffset
-                          :yoffset       yoffset
-                          :canvas-width  canvas-width
-                          :canvas-height canvas-height
-                          :img1          composed-img
-                          :img2          (draw
-                                           w h x y 64
-                                           img-w img-h)})]
-        (println "w h x y iw ih" w h x y img-w img-h)
-        (recur (rest imgs-left) recomposed))
-      composed-img)))
-
-
-
-(defn test-generate-seq-and-compose-it [& {:keys [canvas-width canvas-height pop-size seq-size]
-                                           :or   {canvas-width  400
-                                                  canvas-height 400
-                                                  pop-size      5000
-                                                  seq-size      500}}]
-  (imgz/show
-    (let [rand-pop (repeatedly pop-size generate-random-view)
-          img-seq  (generate-img-compose-seq
-                     {:candidate-pop rand-pop
-                      :canvas-width  canvas-width
-                      :canvas-height canvas-height
-                      :seq-size      seq-size})]
-      (println "img seq: " (vec img-seq))
-      (img-compose-seq->composed-img
-        {:imgs          img-seq
-         :canvas-width  canvas-width
-         :canvas-height canvas-height}))))
