@@ -13,22 +13,24 @@
     w h x y iters (max 2 width) (max 2 height)
     [:og-plain-quat :draw-lines]))
 
+(defn rand-w-wiggle [samples ratio-wiggle]
+  (let [r (rand-nth samples)]
+    (+ r (c/if-not-pos-then-default
+           (c/random-around-zero-w-radius
+             (* r ratio-wiggle))
+           0.0))))
+
 (defn generate-random-view []
   "A random-ish [w h x y] 'view'
   by sampling values likely to produce visually
   appealing results."
-  [(+
-     (rand-nth [0.6 0.62 0.64 0.66])
-     (c/if-not-pos-then-default (c/random-around-zero-w-radius 0.005) 0.0))
-   (+
-     (rand-nth [0.0 0.005 0.01])
-     (c/if-not-pos-then-default (c/random-around-zero-w-radius 0.002) 0.0))
-   (+
-     (rand-nth [0.005 0.01 0.05 0.1])
-     (c/random-around-zero-w-radius 0.001))
-   (+
-     (rand-nth [0.005 0.01 0.05 0.1])
-     (c/random-around-zero-w-radius 0.002))])
+  [
+   (rand-w-wiggle [0.6 0.62 0.64 0.66] 0.2)
+   (rand-w-wiggle [0.0 0.005 0.01 0.05] 0.2)
+   (rand-w-wiggle [0.005 0.01 0.05 0.1] 0.2)
+   (rand-w-wiggle [0.005 0.01 0.05 0.1] 0.2)
+
+   ])
 
 (defn- init-pop [count]
   "Initial population using random sampling"
@@ -36,13 +38,13 @@
     count
     (repeatedly generate-random-view)))
 
-(defn- compare-img-dist-fn-unmemo [fractal-objective w h x y dim-w dim-h]
+(defn- compare-img-dist-fn-unmemo [fractal-objective w h x y draw-iters dim-w dim-h]
   "Computes distance between objective
   image and generated image."
   (img-util/imgs->distance
     fractal-objective
     (draw
-      x y w h 64
+      x y w h draw-iters
       dim-w dim-h)
     false))
 
@@ -50,22 +52,22 @@
   "Memoized version of above."
   (memoize compare-img-dist-fn-unmemo))
 
-(defn- pop-w-distances [pop fractal-objective]
+(defn- pop-w-distances [pop fractal-objective draw-iters canvas-w canvas-h]
   "Compute and conj distances between images."
   (pmap
     (fn [[w h x y]]
-      [(compare-img-dist-fn fractal-objective w h x y 20 20)
+      [(compare-img-dist-fn fractal-objective w h x y draw-iters canvas-w canvas-h)
        w
        h
        x
        y])
     pop))
 
-(defn- sorted-pop-by-distance [pop fractal-objective]
+(defn- sorted-pop-by-distance [pop fractal-objective draw-iters canvas-w canvas-h]
   "Sort population by its calculated fitness."
   (let [w-distances    (sort-by
                          first
-                         (pop-w-distances pop fractal-objective))
+                         (pop-w-distances pop fractal-objective draw-iters canvas-w canvas-h))
         sorted         (map
                          rest
                          w-distances)
@@ -104,18 +106,11 @@
 
 (defn- hybrid [w1 h1 x1 y1 w2 h2 x2 y2]
   "Hybrid of two view components."
-  (let [which-one (rand-nth [0 1 2 3 4 5 6 7 8 9])]
-    (case which-one
-      0 [w2 h2 x1 y1]
-      1 [w1 h2 x2 y2]
-      2 [w1 h1 x2 y2]
-      3 [w1 h1 x1 y2]
-      4 [w2 h1 x2 y2]
-      5 [w1 h2 x2 y1]
-      6 [w2 h1 x1 y2]
-      7 [w1 h2 x1 y2]
-      8 [w2 h1 x2 y1]
-      9 [w1 h1 x2 y1])))
+  (rand-nth
+    (c/cart [[w1 w2]
+             [h1 h2]
+             [x1 x2]
+             [y1 y2]])))
 
 (defn- hybrid-many [base-pop repro-pop take-count]
   "Convenience to hybridize between populations."
@@ -135,23 +130,23 @@
 
         top-third-pop       (take one-third sorted-pop)
 
-        ; top 1/6th hybridized w random other top 1/3rd
+        ; 1/6: top 1/6th hybridized w random other top 1/3rd
         first-sixth-mingled (hybrid-many
                               top-third-pop
                               top-third-pop
                               (int (/ one-third 2)))
-        ; random top 1/3rd
+        ; 2/6: random top 1/3rd
         second-sixth        (->>
                               (shuffle top-third-pop)
                               (take
                                 (int (/ one-third 2))))
 
-        ; random person in pop hybridized with top 1/3rd
+        ; 3/6: random person in pop hybridized with top 1/3rd
         third-sixth         (hybrid-many
                               (shuffle sorted-pop)
                               top-third-pop
                               (int (/ one-third 2)))
-        ; random hybrid w random
+        ; 4/6: random hybrid w random
         fourth-sixth        (hybrid-many
                               (shuffle sorted-pop)
                               sorted-pop
@@ -206,6 +201,7 @@
   (c/if-not-pos-then-default
     (* max (rand))
     (float (/ max 2))))
+
 (defn generate-img-compose-seq
   "Generated a seq of:
    [x-offset,y-offset, w, h, x, y] where
@@ -213,7 +209,7 @@
    This is used to generate a composition
     of images later."
   [{:keys [candidate-pop canvas-width canvas-height seq-size]}]
-  (let [imgs           (take seq-size (shuffle candidate-pop))
+  (let [imgs           (take seq-size (repeatedly #(rand-nth candidate-pop)))
         imgs-w-offsets (map
                          (fn [[w h x y]]
                            [[(* 0.9 (rand-size canvas-width))
@@ -232,9 +228,7 @@
   (loop [imgs-left    imgs
          composed-img nil]
     (if (pos? (count imgs-left))
-      (let [
-            _          (println "f imgs left: " (first imgs-left))
-            [[xoffset yoffset]
+      (let [[[xoffset yoffset]
              [w h x y]
              [img-w img-h]] (first imgs-left)
             recomposed (img-util/combine
@@ -246,17 +240,36 @@
                           :img2          (draw
                                            w h x y 64
                                            img-w img-h)})]
-        (println "w h x y iw ih" w h x y img-w img-h)
+        (println "left: " (count imgs-left) " / " (count imgs) ", current: w h x y iw ih" w h x y img-w img-h)
         (recur (rest imgs-left) recomposed))
       composed-img)))
 
+(defn generate-random-seq-of-fractals-and-compose-it
+  "Test generate random img specs and compose them into one image."
+  [& {:keys [canvas-width canvas-height pop-size seq-size]
+      :or   {canvas-width  200
+             canvas-height 200
+             pop-size      100
+             seq-size      100}}]
+  (let [rand-pop     (repeatedly pop-size generate-random-view)
+        img-seq      (generate-img-compose-seq
+                       {:candidate-pop rand-pop
+                        :canvas-width  canvas-width
+                        :canvas-height canvas-height
+                        :seq-size      seq-size})
+        composed-img (img-compose-seq->composed-img
+                       {:imgs          img-seq
+                        :canvas-width  canvas-width
+                        :canvas-height canvas-height})]
+    (println "img seq: " (vec img-seq))
+    (imgz/show composed-img)))
 
-(defn iterate-pop [fractal-objective init-size iters]
+(defn iterate-pop [fractal-objective init-size iters draw-iters canvas-w canvas-h]
   "Main function to iterate through population using GA."
   (loop [the-iters   iters
          the-pop     (init-pop init-size)
          total-dists []]
-    (println "iter: " (- iters the-iters) (count the-pop))
+    (println "iter: " (- iters the-iters) ", pop size: " (count the-pop))
     #_(when (= 0 (mod the-iters (int (/ iters 10.0))))
         (imgz/show
           (img-compose-seq->composed-img
@@ -267,7 +280,8 @@
              (not (distances-converged? total-dists)))
       (let [[total-distance sorted-old-pop]
             (time
-              (sorted-pop-by-distance the-pop fractal-objective))]
+              (sorted-pop-by-distance the-pop fractal-objective draw-iters canvas-w canvas-h))]
+        (clojure.pprint/pprint (vec (first sorted-old-pop)))
         (recur
           (dec the-iters)
           (sorted-old-pop->new-pop
@@ -275,3 +289,23 @@
           (conj total-dists total-distance)))
       {:total-distances-ts total-dists
        :final-pop          the-pop})))
+
+(defn iterate-pop-experiment []
+  (let [canvas-w              40
+        canvas-h              40
+        draw-iters            32
+        obj-w                 0.655
+        obj-h                 0.05
+        obj-x                 0.01
+        obj-y                 0.05
+        fractal-objective-img (draw
+                                obj-w obj-h obj-x obj-y draw-iters canvas-w canvas-h)
+        _                     (imgz/show fractal-objective-img)
+        iter-results          (iterate-pop fractal-objective-img 100 200 draw-iters canvas-w canvas-h)
+        [w h x y] (first (:final-pop iter-results))]
+
+    (clojure.pprint/pprint (:total-distances-ts iter-results))
+
+    (imgz/show
+      (draw w h x y 64 150 150))
+    iter-results))
