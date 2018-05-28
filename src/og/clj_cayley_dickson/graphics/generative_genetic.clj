@@ -2,42 +2,33 @@
   (:require
     [og.clj-cayley-dickson.graphics.image-util :as img-util]
     [og.clj-cayley-dickson.graphics.fractal :as frac]
+    [og.clj-cayley-dickson.common :as c]
     [mikera.image.core :as imgz]))
 
 
 (defn draw [w h x y iters width height]
+  "Draw fractal with some defaults."
   #_(println "draw: " w h x y iters width height)
   (frac/draw
     w h x y iters (max 2 width) (max 2 height)
     [:og-plain-quat :draw-lines]))
 
-(defn if-not-pos-then-default [v default]
-  (if (or (zero? v) (neg? v))
-    default
-    v))
-
-(defn- random-around-zero-w-radius [radius]
-  "Random float in [-radius/2,radius/2]"
-  (* radius
-     (- (rand)
-        0.5)))
-
 (defn generate-random-view []
   "A random-ish [w h x y] 'view'
   by sampling values likely to produce visually
-  appealing results"
+  appealing results."
   [(+
      (rand-nth [0.6 0.62 0.64 0.66])
-     (if-not-pos-then-default (random-around-zero-w-radius 0.005) 0.0))
+     (c/if-not-pos-then-default (c/random-around-zero-w-radius 0.005) 0.0))
    (+
      (rand-nth [0.0 0.005 0.01])
-     (if-not-pos-then-default (random-around-zero-w-radius 0.002) 0.0))
+     (c/if-not-pos-then-default (c/random-around-zero-w-radius 0.002) 0.0))
    (+
      (rand-nth [0.005 0.01 0.05 0.1])
-     (random-around-zero-w-radius 0.001))
+     (c/random-around-zero-w-radius 0.001))
    (+
      (rand-nth [0.005 0.01 0.05 0.1])
-     (random-around-zero-w-radius 0.002))])
+     (c/random-around-zero-w-radius 0.002))])
 
 (defn- init-pop [count]
   "Initial population using random sampling"
@@ -45,10 +36,9 @@
     count
     (repeatedly generate-random-view)))
 
-
 (defn- compare-img-dist-fn-unmemo [fractal-objective w h x y dim-w dim-h]
   "Computes distance between objective
-  image and generated image"
+  image and generated image."
   (img-util/imgs->distance
     fractal-objective
     (draw
@@ -57,11 +47,11 @@
     false))
 
 (def compare-img-dist-fn
-  "Memoized version of above"
+  "Memoized version of above."
   (memoize compare-img-dist-fn-unmemo))
 
 (defn- pop-w-distances [pop fractal-objective]
-  "compute and conj distances between images"
+  "Compute and conj distances between images."
   (pmap
     (fn [[w h x y]]
       [(compare-img-dist-fn fractal-objective w h x y 20 20)
@@ -72,7 +62,7 @@
     pop))
 
 (defn- sorted-pop-by-distance [pop fractal-objective]
-  "Sort population by its calculated fitness"
+  "Sort population by its calculated fitness."
   (let [w-distances    (sort-by
                          first
                          (pop-w-distances pop fractal-objective))
@@ -88,7 +78,7 @@
     [total-distance sorted]))
 
 (defn- selection-linear [pop total-fitness]
-  "TODO wip select new pop linearly weights"
+  "TODO wip select new pop linearly weights."
   (let [pop-count     (count pop)
         pop-w-weights (map
                         (fn [dist w h x y]
@@ -101,7 +91,7 @@
 
 (defn- mutate [w h x y]
   "Mutate a view vector by some small (or large)
-  amount in one component"
+  amount in one component."
   (let [which-one    (rand-nth [0 1 2 3])
         sign         (rand-nth [1 -1])
         how-much     (rand-nth [0.01 0.05 0.1 0.2])
@@ -113,7 +103,7 @@
       3 [w h x (transform-fn y)])))
 
 (defn- hybrid [w1 h1 x1 y1 w2 h2 x2 y2]
-  "Hybrid of two view components"
+  "Hybrid of two view components."
   (let [which-one (rand-nth [0 1 2 3 4 5 6 7 8 9])]
     (case which-one
       0 [w2 h2 x1 y1]
@@ -128,7 +118,7 @@
       9 [w1 h1 x2 y1])))
 
 (defn- hybrid-many [base-pop repro-pop take-count]
-  "Convenience to hybridize between populations"
+  "Convenience to hybridize between populations."
   (->>
     base-pop
     (map
@@ -139,7 +129,7 @@
       take-count)))
 
 (defn- sorted-old-pop->new-pop [sorted-pop]
-  "Heuristic makeup of new pop from the old"
+  "Heuristic makeup of new pop from the old."
   (let [how-many            (count sorted-pop)
         one-third           (int (/ how-many 3))
 
@@ -184,32 +174,28 @@
                               new-pop)]
     new-pop-mutated))
 
-(defn- rel-err [a b]
-  (/
-    (Math/abs
-      (- a b))
-    a))
 
 (defn- distances-converged? [distances]
-  "Converged based on first-order delta (etc) between distances"
+  "Converged based on first-order delta (etc) between distances."
   (let [c? (or
-             (and (< 10 (count distances))
-                  (let [last1      (last distances)
-                        last-third (nth distances
-                                        (* 2
-                                           (int
-                                             (/
-                                               (count distances)
-                                               3.0))))
-                        is-stuck?  (or (< last-third last1)
-                                       (> 0.01 (rel-err last-third last1)))]
-                    (when is-stuck? (println "\n-- Stuck! --\n"))
-                    is-stuck?))
+             (and
+               (< 100 (count distances))
+               (let [last1      (last distances)
+                     last-third (nth distances
+                                     (* 2
+                                        (int
+                                          (/
+                                            (count distances)
+                                            3.0))))
+                     is-stuck?  (or (< last-third last1)
+                                    (> 0.01 (c/rel-err last-third last1)))]
+                 (when is-stuck? (println "\n-- Stuck! --\n"))
+                 is-stuck?))
              (and
                (< 2 (count distances))
                (let [last1    (last distances)
                      last2    (second (reverse distances))
-                     rel-conv (rel-err last1 last2)]
+                     rel-conv (c/rel-err last1 last2)]
                  (println "Convergence check, rel error: " rel-conv)
                  (> 0.000005 rel-conv))))]
     (when c? (println "Converged!"))
@@ -217,7 +203,7 @@
 
 
 (defn- rand-size [max]
-  (if-not-pos-then-default
+  (c/if-not-pos-then-default
     (* max (rand))
     (float (/ max 2))))
 (defn generate-img-compose-seq
@@ -266,17 +252,17 @@
 
 
 (defn iterate-pop [fractal-objective init-size iters]
-  "Main function to iterate through population using GA"
+  "Main function to iterate through population using GA."
   (loop [the-iters   iters
          the-pop     (init-pop init-size)
          total-dists []]
     (println "iter: " (- iters the-iters) (count the-pop))
     #_(when (= 0 (mod the-iters (int (/ iters 10.0))))
-      (imgz/show
-        (img-compose-seq->composed-img
-          {:imgs          [[[0 0] (first the-pop) [150 150]]]
-           :canvas-height 100
-           :canvas-width  100})))
+        (imgz/show
+          (img-compose-seq->composed-img
+            {:imgs          [[[0 0] (first the-pop) [150 150]]]
+             :canvas-height 100
+             :canvas-width  100})))
     (if (and (pos? the-iters)
              (not (distances-converged? total-dists)))
       (let [[total-distance sorted-old-pop]
