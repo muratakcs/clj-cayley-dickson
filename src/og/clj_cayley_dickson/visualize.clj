@@ -8,6 +8,7 @@
     [mikera.image.core :as imgz]))
 
 (defn- animate-results [glob output]
+  "Uses glob to aggregate image files into animated gif."
   (println "Creating animated gif from files, to file: " glob " -> " output)
   (try
     (sh "convert" "-delay" "15" "-loop" "0" glob output)
@@ -15,6 +16,7 @@
       (println "Could not create animated gif:" t))))
 
 (defn- draw-images-to-files
+  "Creates and draws fractals."
   [{:keys [domain-range impl-algo impl-draw x0 y0 w0 h0 iters width height outdir]}]
   (let [count* (atom 0)]
     (doseq [{:keys [i-delt j-delt w-delt h-delt]
@@ -38,6 +40,7 @@
 
 
 (defn mandelbrot-experiment [exp-name impl-algo impl-draw fn-domain-range iters]
+  "Creates a mandelbrot fractal movie gif."
   (if-not (fs/exists? "fractals")
     (fs/mkdir "fractals"))
   (let [periods      4
@@ -73,7 +76,8 @@
            (System/currentTimeMillis) ".gif"))))
 
 
-(defn test-generate-seq-and-compose-it
+(defn- test-generate-seq-and-compose-it
+  "Test generate random img specs and compose them into one image."
   [& {:keys [canvas-width canvas-height pop-size seq-size]
       :or   {canvas-width  100
              canvas-height 100
@@ -118,7 +122,7 @@
   (gg/draw
     0.655 0.05 0.01 0.05 64 100 100))
 
-(def iter-results (gg/iterate-pop fractal-objective 50 100))
+(def iter-results (gg/iterate-pop fractal-objective 5000 10))
 
 (clojure.pprint/pprint (:total-distances-ts iter-results))
 
