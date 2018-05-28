@@ -1,7 +1,8 @@
 (ns og.clj-cayley-dickson.graphics.generative-genetic
   (:require
     [og.clj-cayley-dickson.graphics.image-util :as img-util]
-    [og.clj-cayley-dickson.graphics.fractal :as frac]))
+    [og.clj-cayley-dickson.graphics.fractal :as frac]
+    [mikera.image.core :as imgz]))
 
 
 (defn draw [w h x y iters width height]
@@ -70,7 +71,7 @@
        y])
     pop))
 
-(defn- sorted-pop-by-fitness [pop fractal-objective]
+(defn- sorted-pop-by-distance [pop fractal-objective]
   "Sort population by its calculated fitness"
   (let [w-distances    (sort-by
                          first
@@ -245,7 +246,9 @@
   (loop [imgs-left    imgs
          composed-img nil]
     (if (pos? (count imgs-left))
-      (let [[[xoffset yoffset]
+      (let [
+            _          (println "f imgs left: " (first imgs-left))
+            [[xoffset yoffset]
              [w h x y]
              [img-w img-h]] (first imgs-left)
             recomposed (img-util/combine
@@ -268,11 +271,17 @@
          the-pop     (init-pop init-size)
          total-dists []]
     (println "iter: " (- iters the-iters) (count the-pop))
+    #_(when (= 0 (mod the-iters (int (/ iters 10.0))))
+      (imgz/show
+        (img-compose-seq->composed-img
+          {:imgs          [[[0 0] (first the-pop) [150 150]]]
+           :canvas-height 100
+           :canvas-width  100})))
     (if (and (pos? the-iters)
              (not (distances-converged? total-dists)))
       (let [[total-distance sorted-old-pop]
             (time
-              (sorted-pop-by-fitness the-pop fractal-objective))]
+              (sorted-pop-by-distance the-pop fractal-objective))]
         (recur
           (dec the-iters)
           (sorted-old-pop->new-pop

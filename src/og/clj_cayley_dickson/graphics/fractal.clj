@@ -4,6 +4,7 @@
              :refer [complex quaternion]]
             [og.clj-cayley-dickson.graphics.colors
              :refer [argb-int]]
+            [og.clj-cayley-dickson.common :as c]
             [me.raynes.fs :as fs]
             [mikera.image.core :as imgz]
             [mikera.image.colours :as imgz-color])
@@ -21,8 +22,9 @@
 (set! *unchecked-math* true)
 ;(set! *warn-on-reflection* true)
 
-(defn calc-iterations-og-quat
-  "5x slower than apache commons math"
+(defn- calc-iterations-og-quat
+  "Mandelbrot iterations.
+  This impl is 5x slower than apache commons math."
   [a b c d max-iterations impl]
   (let [q-number (quaternion {:a a :b b :c c :d d :impl impl})]
     (loop [z-q        q-number
@@ -37,8 +39,9 @@
           (plus q-number (times z-q z-q))
           (inc iterations))))))
 
-(defn calc-iterations-og-complex
-  "5x slower than apache commons math"
+(defn- calc-iterations-og-complex
+  "Mandelbrot iterations.
+  This impl is 5x slower than apache commons math."
   [p q max-iterations impl]
   (let [c (complex {:a p :b q :impl impl})]
     (loop [z          c
@@ -51,8 +54,9 @@
         (recur (plus c (times z z)) (inc iterations))))))
 
 
-(defn calc-iterations-commons-complex
-  "fast"
+(defn- calc-iterations-commons-complex
+  "Mandelbrot iterations.
+  This impl is fast, using Apache Commons Math Complex."
   [p q max-iterations]
   (let [c (Complex. p q)]
     (loop [z          c
@@ -64,14 +68,15 @@
           (- iterations 1))
         (recur (.add c (.multiply z z)) (inc iterations))))))
 
-(defn cartesian2d->quaternion-coeffs [p q]
+(defn- cartesian2d->quaternion-coeffs [p q]
+  "Made-up function taking [x,y] and mapping to [q1, q2, q3, q4]"
   [(/ p 1.8)
    (/ q 1.8)
    (+ (/ q 6) (/ p 6))
    0.01])
 
-
-(defn calc-iterations [p q max-iters impl]
+(defn- calc-iterations [p q max-iters impl]
+  "Computes Mandelbrot iterations for Nion [p, q] and a provided implementation type to use."
   (case impl
     :og-plain-quat (apply calc-iterations-og-quat
                           (concat
@@ -82,7 +87,8 @@
     :apache (calc-iterations-commons-complex p q max-iters)))
 
 
-(defn calc-pixel-color
+(defn- calc-pixel-color
+  "Returns an instance of Color based on number of iterations."
   [iterations max-iterations]
   (if (or (< iterations 10)
           (= iterations max-iterations))
@@ -93,7 +99,8 @@
           b    (min (int (+ 40 (/ (* 5 (* gray gray)) 255))) 255)]
       (Color. r g b))))
 
-(defn calc-pixel-color-argb-long
+(defn- calc-pixel-color-argb-long
+  "Returns a color long based on number of iterations."
   [iterations max-iterations]
   (if (or (< iterations 10)
           (= iterations max-iterations))
@@ -104,7 +111,9 @@
           b    (min (long (+ 40 (/ (* 5 (* gray gray)) 255))) 255)]
       (imgz-color/rgb-from-components r g b))))
 
-(defn calc-pixel-color-argb
+(defn- calc-pixel-color-argb
+  "Returns an int array representing an ARGB color
+  derived from iterations, with alpha = 1.0."
   [iterations max-iterations]
   (if (or (< iterations 10)
           (= iterations max-iterations))
@@ -115,14 +124,9 @@
           b    (min (int (+ 40 (/ (* 5 (* gray gray)) 255))) 255)]
       (int-array [1.0 r g b]))))
 
-(defn cart [colls]
-  (if (empty? colls)
-    '(())
-    (for [x    (first colls)
-          more (cart (rest colls))]
-      (cons x more))))
 
-(defn intensity
+(defn- intensity
+  "Compute intensity of a pixel based on screen coordinates of pixel."
   [i j x y width height max-iterations surface-width surface-height impl]
   (let [p          (+ x
                       (* width
@@ -141,9 +145,9 @@
                                     iterations max-iterations))]
     [color i j]))
 
-
-(defn generate-intensities [x y width height max-iterations surface-width surface-height impl]
-  (let [cross-prod (cart
+(defn- generate-intensities [x y width height max-iterations surface-width surface-height impl]
+  "Compute all intensities for a Madelbrot set."
+  (let [cross-prod (c/cart
                      [(range surface-width)
                       (range surface-height)])
         intenses   (pmap
@@ -155,12 +159,14 @@
                      cross-prod)]
     intenses))
 
-(defn draw-intensities-w-lines [intensities graphics]
+(defn- draw-intensities-w-lines [intensities graphics]
+  "Draws a Mandelbrot intensity set using `drawLine`."
   (doseq [[color i j] intensities]
     (.setColor graphics color)
     (.drawLine graphics i j i j)))
 
-(defn draw-intensities-w-raster [intensities image]
+(defn- draw-intensities-w-raster [intensities image]
+  "Draws a Mandelbrot intensity set using `setPixel`."
   ; Maybe look at this if performance is not improving with this technique:
   ; https://stackoverflow.com/questions/25178810/create-a-writableraster-based-on-int-array
   (let [^WritableRaster raster (.getRaster image)]
@@ -170,14 +176,15 @@
 
 
 
-(defn draw-intensities-w-imagez [intensities image surface-width surface-height]
+(defn- draw-intensities-w-imagez [intensities image surface-width surface-height]
+  "Draws a Mandelbrot intensity set using imagez."
   (let [pixels (imgz/get-pixels image)]
     (doseq [[argb i j] intensities]
       (aset pixels (+ (* j surface-width) i) argb))
     (imgz/set-pixels image pixels)))
 
-(defn generate
-  "docs"
+(defn- generate
+  "Generate Mandelbrot fractal into provided image.  Side effects the image."
   [x y width height max-iterations image surface-width surface-height impl]
   (let [graphics    (.createGraphics image)
         intensities (generate-intensities
@@ -188,28 +195,8 @@
       :draw-lines (draw-intensities-w-lines intensities graphics)
       :draw-raster (draw-intensities-w-raster intensities image))))
 
-(defn draw [x y width height iterations surface-width surface-height impl]
-  (let [^BufferedImage image (BufferedImage.
-                               surface-width
-                               surface-height
-                               BufferedImage/TYPE_INT_ARGB)]
-    (generate x y width height
-              iterations image
-              surface-width surface-height impl)
-    image))
-
-(defn draw-w-io
-  [x y width height iterations surface-width surface-height impl outdir]
-  (if-not (fs/exists? outdir)
-    (fs/mkdir outdir))
-  (let [filename             (str outdir "/fractal-" (System/currentTimeMillis) ".png")
-        ^BufferedImage image (time
-                               (draw x y width height iterations surface-width surface-height impl))]
-    (println "Draw to: " filename)
-    (ImageIO/write image "png" (File. filename))))
-
-
-(defn offsets-map [i-deltas j-deltas w-deltas h-deltas]
+(defn- deltas->domain-range [i-deltas j-deltas w-deltas h-deltas]
+  "Returns list of maps representing all offsets in a domain-range timeseries."
   (->> (map vector i-deltas j-deltas w-deltas h-deltas)
        (map
          (fn [[i-delt j-delt w-delt h-delt]]
@@ -242,7 +229,7 @@
                              (range images-count))
         w-deltas           (repeat images-count 0.0)
         h-deltas           (repeat images-count 0.0)
-        domain-range       (offsets-map i-deltas j-deltas w-deltas h-deltas)]
+        domain-range       (deltas->domain-range i-deltas j-deltas w-deltas h-deltas)]
     domain-range))
 
 (defn xy-offsets-periodic [periods images-count]
@@ -273,5 +260,26 @@
                              (range images-count))
         w-deltas           (repeat images-count 0.0)
         h-deltas           (repeat images-count 0.0)
-        domain-range       (offsets-map i-deltas j-deltas w-deltas h-deltas)]
+        domain-range       (deltas->domain-range i-deltas j-deltas w-deltas h-deltas)]
     domain-range))
+
+(defn draw [x y width height iterations surface-width surface-height impl]
+  (let [^BufferedImage image (BufferedImage.
+                               surface-width
+                               surface-height
+                               BufferedImage/TYPE_INT_ARGB)]
+    (generate x y width height
+              iterations image
+              surface-width surface-height impl)
+    image))
+
+(defn draw-fractal-w-io
+  "Draw fractal to image and file."
+  [x y width height iterations surface-width surface-height impl outdir]
+  (if-not (fs/exists? outdir)
+    (fs/mkdir outdir))
+  (let [filename             (str outdir "/fractal-" (System/currentTimeMillis) ".png")
+        ^BufferedImage image (time
+                               (draw x y width height iterations surface-width surface-height impl))]
+    (println "Draw to: " filename)
+    (ImageIO/write image "png" (File. filename))))

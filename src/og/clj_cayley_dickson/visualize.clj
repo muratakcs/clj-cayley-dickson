@@ -30,7 +30,7 @@
                  w-delt)
             h (+ h0
                  h-delt)]
-        (frac/draw-w-io x y w h iters width height [impl-algo impl-draw] outdir)
+        (frac/draw-fractal-w-io x y w h iters width height [impl-algo impl-draw] outdir)
         (swap! count* inc)
         ;(time (draw x y w h 64 (* (inc (+ j i)) 300) (* (inc (+ j i)) 200) [impl :draw-raster]))
         outdir))))
@@ -116,8 +116,17 @@
 (def fractal-objective
   "The BufferedImage we wish to reproduce"
   (gg/draw
-    0.655 0.05 0.01 0.05 64 20 20))
+    0.655 0.05 0.01 0.05 64 100 100))
 
-(def iter-results (gg/iterate-pop fractal-objective 50 20))
+(def iter-results (gg/iterate-pop fractal-objective 50 100))
 
 (clojure.pprint/pprint (:total-distances-ts iter-results))
+
+(imgz/show
+  (gg/img-compose-seq->composed-img
+    {:imgs          [[[0 0] (first (:final-pop iter-results)) [100 100]]]
+     :canvas-height 100
+     :canvas-width  100}))
+
+#_(imgz/show
+  fractal-objective)
